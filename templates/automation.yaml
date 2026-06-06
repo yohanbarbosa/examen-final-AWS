@@ -110,6 +110,19 @@ Resources:
                     - AutoScalingGroupName:
                         Fn::ImportValue:
                           Fn::Sub: "${ALBASGStackName}-AutoScalingGroupName"
+              - Sid: "UseLaunchTemplateForAutoScaling"
+                Effect: Allow
+                Action:
+                  - "ec2:RunInstances"
+                Resource: "*"
+              - Sid: "TagInstancesAndVolumesFromLaunchTemplate"
+                Effect: Allow
+                Action:
+                  - "ec2:CreateTags"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: "RunInstances"
               - Sid: "WriteLambdaLogs"
                 Effect: Allow
                 Action:
