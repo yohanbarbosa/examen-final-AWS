@@ -1,0 +1,46 @@
+name: Destroy CloudFormation Stacks
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  SECURITY_STACK: SecurityGroups-Andrey-Felipe
+  EC2_STACK: EC2-Andrey-Felipe
+  ALB_ASG_STACK: ALB-ASG-Andrey-Felipe
+  AUTOMATION_STACK: Automation-Andrey-Felipe
+
+jobs:
+  destroy:
+    name: Destroy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Destroy stacks in reverse order
+        run: |
+          set -e
+
+          delete_stack () {
+            STACK_NAME="$1"
+
+            if aws cloudformation describe-stacks --stack-name "$STACK_NAME" > /dev/null 2>&1; then
+              echo "Eliminando stack: $STACK_NAME"
+              aws cloudformation delete-stack --stack-name "$STACK_NAME"
+              aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME"
+              echo "Stack eliminado: $STACK_NAME"
+            else
+              echo "El stack no existe o ya fue eliminado: $STACK_NAME"
+            fi
+          }
+
+          delete_stack "$AUTOMATION_STACK"
+          delete_stack "$ALB_ASG_STACK"
+          delete_stack "$EC2_STACK"
+          delete_stack "$SECURITY_STACK"
