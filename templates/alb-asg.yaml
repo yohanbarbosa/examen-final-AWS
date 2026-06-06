@@ -1,0 +1,270 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Stack 3 - Application Load Balancer, Target Group, Launch Template, Auto Scaling Group y Warm Pool. No crea VPC ni Subred."
+
+Parameters:
+  StudentName:
+    Type: String
+    Default: "Andrey-Felipe-Pinto"
+    Description: "Nombre usado para identificar los recursos."
+
+  SecurityStackName:
+    Type: String
+    Default: "SecurityGroups-Andrey-Felipe"
+    Description: "Nombre del stack Security para importar Security Groups."
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: "VPC por defecto detectada automaticamente por GitHub Actions. No se crea en este template."
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: "Subredes por defecto detectadas automaticamente por GitHub Actions. No se crean en este template."
+
+  InstanceType:
+    Type: String
+    Default: "t2.micro"
+    AllowedValues:
+      - "t2.micro"
+      - "t3.micro"
+      - "t3.small"
+    Description: "Tipo de instancia para el Auto Scaling Group."
+
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+    Description: "AMI Amazon Linux 2023 obtenida automaticamente desde SSM."
+
+Resources:
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName:
+        Fn::Sub: "LT-${StudentName}-V1"
+      VersionDescription: "Version 1 - Aplicacion web inicial"
+      LaunchTemplateData:
+        ImageId:
+          Ref: LatestAmiId
+        InstanceType:
+          Ref: InstanceType
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              Fn::Sub: "${SecurityStackName}-EC2SecurityGroupId"
+        UserData:
+          Fn::Base64:
+            Fn::Sub: |
+              #!/bin/bash
+              dnf update -y
+              dnf install -y httpd
+              systemctl enable httpd
+              systemctl start httpd
+              INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+              cat > /var/www/html/index.html <<EOF
+              <!DOCTYPE html>
+              <html lang="es">
+              <head>
+                <meta charset="UTF-8">
+                <title>ALB ASG - ${StudentName}</title>
+                <style>
+                  body { font-family: Arial, sans-serif; margin: 40px; background: #eef6ff; }
+                  .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+                  h1 { color: #0f172a; }
+                </style>
+              </head>
+              <body>
+                <div class="card">
+                  <h1>Aplicacion web version 1</h1>
+                  <p>Estudiante: ${StudentName}</p>
+                  <p>Instancia: $INSTANCE_ID</p>
+                  <p>Infraestructura: ALB + Target Group + Launch Template + ASG + Warm Pool.</p>
+                </div>
+              </body>
+              </html>
+              EOF
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value:
+                  Fn::Sub: "ASG-Instance-${StudentName}-V1"
+              - Key: Proyecto
+                Value: "Examen-Final-Cloud-Computing"
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value:
+                  Fn::Sub: "ASG-Volume-${StudentName}"
+              - Key: Proyecto
+                Value: "Examen-Final-Cloud-Computing"
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - Key: Name
+              Value:
+                Fn::Sub: "LT-${StudentName}-V1"
+            - Key: Proyecto
+              Value: "Examen-Final-Cloud-Computing"
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name:
+        Fn::Sub: "TG-${AWS::StackName}"
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      VpcId:
+        Ref: VpcId
+      HealthCheckEnabled: true
+      HealthCheckPath: "/"
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: "traffic-port"
+      Matcher:
+        HttpCode: "200"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "TG-${StudentName}"
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name:
+        Fn::Sub: "ALB-${StudentName}"
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      SecurityGroups:
+        - Fn::ImportValue:
+            Fn::Sub: "${SecurityStackName}-ALBSecurityGroupId"
+      Subnets:
+        Ref: SubnetIds
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "ALB-${StudentName}"
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+
+  ALBListenerHTTP:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn:
+        Ref: ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: WebTargetGroup
+
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName:
+        Fn::Sub: "ASG-${StudentName}"
+      MinSize: "1"
+      MaxSize: "3"
+      DesiredCapacity: "1"
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+      VPCZoneIdentifier:
+        Ref: SubnetIds
+      TargetGroupARNs:
+        - Ref: WebTargetGroup
+      LaunchTemplate:
+        LaunchTemplateId:
+          Ref: WebLaunchTemplate
+        Version:
+          Fn::GetAtt:
+            - WebLaunchTemplate
+            - LatestVersionNumber
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "ASG-Instance-${StudentName}"
+          PropagateAtLaunch: true
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: "PT2M"
+        WaitOnResourceSignals: false
+
+  WebWarmPool:
+    Type: AWS::AutoScaling::WarmPool
+    Properties:
+      AutoScalingGroupName:
+        Ref: WebAutoScalingGroup
+      PoolState: Stopped
+      MinSize: 1
+      MaxGroupPreparedCapacity: 2
+
+Outputs:
+  LoadBalancerDNSName:
+    Description: "DNS publico del Application Load Balancer"
+    Value:
+      Fn::GetAtt:
+        - ApplicationLoadBalancer
+        - DNSName
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-LoadBalancerDNSName"
+
+  LoadBalancerURL:
+    Description: "URL publica del Application Load Balancer"
+    Value:
+      Fn::Sub:
+        - "http://${DNSName}"
+        - DNSName:
+            Fn::GetAtt:
+              - ApplicationLoadBalancer
+              - DNSName
+
+  TargetGroupArn:
+    Description: "ARN del Target Group"
+    Value:
+      Ref: WebTargetGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-TargetGroupArn"
+
+  LaunchTemplateId:
+    Description: "ID del Launch Template"
+    Value:
+      Ref: WebLaunchTemplate
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-LaunchTemplateId"
+
+  LaunchTemplateLatestVersion:
+    Description: "Numero de la ultima version del Launch Template"
+    Value:
+      Fn::GetAtt:
+        - WebLaunchTemplate
+        - LatestVersionNumber
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-LaunchTemplateLatestVersion"
+
+  AutoScalingGroupName:
+    Description: "Nombre del Auto Scaling Group"
+    Value:
+      Ref: WebAutoScalingGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-AutoScalingGroupName"
+
+  WarmPoolName:
+    Description: "Warm Pool asociado al Auto Scaling Group"
+    Value:
+      Ref: WebWarmPool
+
+  ALBASGStackName:
+    Description: "Nombre del stack ALB-ASG"
+    Value:
+      Ref: AWS::StackName
