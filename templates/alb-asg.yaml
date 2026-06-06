@@ -65,20 +65,280 @@ Resources:
               <html lang="es">
               <head>
                 <meta charset="UTF-8">
-                <title>ALB ASG - ${StudentName}</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>ALB ASG V2 - ${StudentName}</title>
                 <style>
-                  body { font-family: Arial, sans-serif; margin: 40px; background: #eef6ff; color: #111827; }
-                  main { max-width: 760px; background: #ffffff; padding: 28px; border: 1px solid #bfdbfe; border-radius: 8px; }
-                  h1 { margin-top: 0; color: #0f172a; }
+                  * { box-sizing: border-box; }
+                  body {
+                    margin: 0;
+                    min-height: 100vh;
+                    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    color: #f8fbff;
+                    background:
+                      linear-gradient(115deg, rgba(16, 185, 129, 0.12), transparent 34%),
+                      linear-gradient(245deg, rgba(244, 114, 182, 0.14), transparent 30%),
+                      linear-gradient(135deg, #061427 0%, #0a2450 48%, #04111f 100%);
+                    overflow-x: hidden;
+                  }
+
+                  body::before {
+                    content: "";
+                    position: fixed;
+                    inset: 0;
+                    pointer-events: none;
+                    background-image:
+                      linear-gradient(rgba(137, 206, 255, 0.08) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(137, 206, 255, 0.08) 1px, transparent 1px);
+                    background-size: 48px 48px;
+                    mask-image: linear-gradient(to bottom, rgba(0,0,0,0.88), transparent 82%);
+                  }
+
+                  main {
+                    width: min(1120px, calc(100% - 36px));
+                    min-height: 100vh;
+                    margin: 0 auto;
+                    display: grid;
+                    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+                    gap: 34px;
+                    align-items: center;
+                    padding: 44px 0;
+                  }
+
+                  .hero, .panel {
+                    position: relative;
+                    z-index: 1;
+                  }
+
+                  .badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 9px 13px;
+                    border: 1px solid rgba(147, 210, 255, 0.32);
+                    border-radius: 8px;
+                    background: rgba(7, 21, 43, 0.58);
+                    color: #b9e6ff;
+                    font-size: 0.84rem;
+                    letter-spacing: 0;
+                    box-shadow: 0 0 28px rgba(0, 132, 255, 0.18);
+                  }
+
+                  .badge span {
+                    width: 9px;
+                    height: 9px;
+                    border-radius: 50%;
+                    background: #42f5b0;
+                    box-shadow: 0 0 18px #42f5b0;
+                  }
+
+                  h1 {
+                    margin: 22px 0 18px;
+                    max-width: 820px;
+                    font-size: 5.9rem;
+                    line-height: 0.92;
+                    letter-spacing: 0;
+                  }
+
+                  .gradient-text {
+                    color: transparent;
+                    background: linear-gradient(90deg, #ffffff 0%, #72d7ff 42%, #3b82f6 100%);
+                    -webkit-background-clip: text;
+                    background-clip: text;
+                  }
+
+                  .lead {
+                    max-width: 680px;
+                    margin: 0;
+                    color: #c9ddf6;
+                    font-size: 1.18rem;
+                    line-height: 1.65;
+                  }
+
+                  .actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 12px;
+                    margin-top: 30px;
+                  }
+
+                  .chip {
+                    padding: 12px 15px;
+                    border: 1px solid rgba(125, 197, 255, 0.28);
+                    border-radius: 8px;
+                    background: rgba(255, 255, 255, 0.08);
+                    color: #e7f5ff;
+                    font-size: 0.95rem;
+                  }
+
+                  .panel {
+                    border: 1px solid rgba(145, 209, 255, 0.28);
+                    border-radius: 8px;
+                    background: linear-gradient(180deg, rgba(10, 31, 63, 0.82), rgba(6, 18, 36, 0.74));
+                    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+                    padding: 24px;
+                    backdrop-filter: blur(18px);
+                  }
+
+                  .signal-frame {
+                    min-height: 280px;
+                    display: grid;
+                    grid-template-columns: repeat(5, 1fr);
+                    grid-template-rows: repeat(5, 1fr);
+                    gap: 10px;
+                    margin-bottom: 24px;
+                    padding: 16px;
+                    border-radius: 8px;
+                    border: 1px solid rgba(117, 211, 255, 0.24);
+                    background:
+                      linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px),
+                      linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+                      linear-gradient(145deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.1));
+                    background-size: 36px 36px, 36px 36px, auto;
+                    box-shadow: inset 0 0 44px rgba(38, 173, 255, 0.14);
+                    animation: pulse 4s ease-in-out infinite;
+                  }
+
+                  .core {
+                    grid-column: 2 / 5;
+                    grid-row: 2 / 5;
+                    display: grid;
+                    place-items: center;
+                    border-radius: 8px;
+                    background: rgba(4, 17, 34, 0.9);
+                    border: 1px solid rgba(164, 223, 255, 0.4);
+                    color: #ffffff;
+                    font-weight: 800;
+                    font-size: 3.8rem;
+                    box-shadow: inset 0 0 38px rgba(83, 194, 255, 0.22);
+                  }
+
+                  .node {
+                    border: 1px solid rgba(137, 206, 255, 0.2);
+                    border-radius: 6px;
+                    background: rgba(255, 255, 255, 0.08);
+                  }
+
+                  .node:nth-child(2),
+                  .node:nth-child(6),
+                  .node:nth-child(10) {
+                    background: rgba(16, 185, 129, 0.26);
+                    box-shadow: 0 0 22px rgba(16, 185, 129, 0.25);
+                  }
+
+                  .node:nth-child(4),
+                  .node:nth-child(8) {
+                    background: rgba(244, 114, 182, 0.22);
+                    box-shadow: 0 0 22px rgba(244, 114, 182, 0.22);
+                  }
+
+                  .metrics {
+                    display: grid;
+                    gap: 12px;
+                  }
+
+                  .metric {
+                    display: grid;
+                    gap: 5px;
+                    padding: 13px 0;
+                    border-top: 1px solid rgba(150, 211, 255, 0.16);
+                  }
+
+                  .label {
+                    color: #92bde4;
+                    font-size: 0.78rem;
+                    text-transform: uppercase;
+                  }
+
+                  .value {
+                    color: #ffffff;
+                    font-size: 1rem;
+                    overflow-wrap: anywhere;
+                  }
+
+                  @keyframes pulse {
+                    0%, 100% { transform: scale(1); filter: saturate(1); }
+                    50% { transform: scale(1.025); filter: saturate(1.35); }
+                  }
+
+                  @media (max-width: 820px) {
+                    main {
+                      grid-template-columns: 1fr;
+                      align-items: start;
+                      padding: 28px 0;
+                    }
+
+                    .panel {
+                      order: -1;
+                    }
+
+                    h1 {
+                      font-size: 3.6rem;
+                    }
+
+                    .signal-frame {
+                      max-width: 260px;
+                      margin: 0 auto 22px;
+                      min-height: 260px;
+                    }
+
+                    .core {
+                      font-size: 3rem;
+                    }
+                  }
+
+                  @media (max-width: 520px) {
+                    h1 {
+                      font-size: 2.7rem;
+                    }
+                  }
                 </style>
               </head>
               <body>
                 <main>
-                  <h1>Aplicacion web version 1</h1>
-                  <p>Estudiante: ${StudentName}</p>
-                  <p>Codigo: ${StudentCode}</p>
-                  <p>Instancia: $INSTANCE_ID</p>
-                  <p>Infraestructura desplegada con ALB, Target Group, Launch Template, ASG y Warm Pool.</p>
+                  <section class="hero">
+                    <div class="badge"><span></span> ALB + ASG online</div>
+                    <h1><span class="gradient-text">Aplicacion web version 2</span></h1>
+                    <p class="lead">Una experiencia cloud futurista, rapida y distribuida por Auto Scaling Group, balanceada por Application Load Balancer y preparada con Warm Pool.</p>
+                    <div class="actions">
+                      <div class="chip">Social cloud UI</div>
+                      <div class="chip">Alta disponibilidad</div>
+                      <div class="chip">Infra 1A</div>
+                    </div>
+                  </section>
+
+                  <aside class="panel">
+                    <div class="signal-frame">
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="core">V2</div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                      <div class="node"></div>
+                    </div>
+                    <div class="metrics">
+                      <div class="metric">
+                        <div class="label">Estudiante</div>
+                        <div class="value">${StudentName}</div>
+                      </div>
+                      <div class="metric">
+                        <div class="label">Codigo</div>
+                        <div class="value">${StudentCode}</div>
+                      </div>
+                      <div class="metric">
+                        <div class="label">Instancia activa</div>
+                        <div class="value">$INSTANCE_ID</div>
+                      </div>
+                      <div class="metric">
+                        <div class="label">Stack</div>
+                        <div class="value">ALB, Target Group, Launch Template, ASG y Warm Pool</div>
+                      </div>
+                    </div>
+                  </aside>
                 </main>
               </body>
               </html>
