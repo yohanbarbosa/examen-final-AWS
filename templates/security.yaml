@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Stack 1 - Security Groups para EC2 publica y Application Load Balancer. No crea VPC ni Subred; usa la VPC por defecto."
+
+Parameters:
+  StudentName:
+    Type: String
+    Default: "Andrey-Felipe-Pinto"
+    Description: "Nombre usado para identificar los recursos."
+
+Resources:
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName:
+        Fn::Sub: "SG-EC2-${StudentName}"
+      GroupDescription:
+        Fn::Sub: "Security Group EC2 publica - ${StudentName}"
+      SecurityGroupIngress:
+        - Description: "HTTP publico para EC2 estatica"
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - Description: "SSH temporal para evidencias academicas"
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - Description: "Salida completa"
+          IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "SG-EC2-${StudentName}"
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName:
+        Fn::Sub: "SG-ALB-${StudentName}"
+      GroupDescription:
+        Fn::Sub: "Security Group Application Load Balancer - ${StudentName}"
+      SecurityGroupIngress:
+        - Description: "HTTP publico para ALB"
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+        - Description: "HTTPS publico para ALB"
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupEgress:
+        - Description: "Salida completa"
+          IpProtocol: "-1"
+          CidrIp: "0.0.0.0/0"
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "SG-ALB-${StudentName}"
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+
+  EC2FromALBIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId:
+        Ref: EC2SecurityGroup
+      Description: "Permite trafico HTTP desde el ALB hacia las instancias del ASG"
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      SourceSecurityGroupId:
+        Ref: ALBSecurityGroup
+
+Outputs:
+  EC2SecurityGroupId:
+    Description: "ID del Security Group de EC2"
+    Value:
+      Ref: EC2SecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-EC2SecurityGroupId"
+
+  ALBSecurityGroupId:
+    Description: "ID del Security Group del ALB"
+    Value:
+      Ref: ALBSecurityGroup
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-ALBSecurityGroupId"
+
+  SecurityStackName:
+    Description: "Nombre del stack de seguridad"
+    Value:
+      Ref: AWS::StackName
