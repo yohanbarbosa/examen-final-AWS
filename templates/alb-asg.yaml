@@ -27,12 +27,11 @@ Parameters:
 
   InstanceType:
     Type: String
-    Default: "t2.micro"
+    Default: "t3.micro"
     AllowedValues:
       - "t2.micro"
       - "t3.micro"
-      - "t3.small"
-    Description: "EC2 instance type for the Auto Scaling Group."
+    Description: "Free Tier eligible EC2 instance type for the Auto Scaling Group."
 
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"

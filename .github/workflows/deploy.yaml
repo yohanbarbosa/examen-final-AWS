@@ -94,6 +94,33 @@ jobs:
           echo "Subredes por defecto detectadas: $DEFAULT_SUBNET_IDS"
           echo "Subred para EC2 estatica: $DEFAULT_EC2_SUBNET_ID"
 
+      - name: Detect Free Tier EC2 instance type automatically
+        run: |
+          set -euo pipefail
+
+          FREE_TIER_TYPES=$(aws ec2 describe-instance-types \
+            --filters "Name=free-tier-eligible,Values=true" \
+            --query "InstanceTypes[].InstanceType" \
+            --output text | tr '\t' '\n' | sort -u)
+
+          FREE_TIER_INSTANCE_TYPE=""
+          for preferred_type in t3.micro t2.micro; do
+            if printf "%s\n" "$FREE_TIER_TYPES" | grep -qx "$preferred_type"; then
+              FREE_TIER_INSTANCE_TYPE="$preferred_type"
+              break
+            fi
+          done
+
+          if [ -z "$FREE_TIER_INSTANCE_TYPE" ]; then
+            echo "No se encontro t3.micro ni t2.micro como Free Tier eligible en la region $AWS_REGION."
+            echo "Tipos Free Tier disponibles:"
+            printf "%s\n" "$FREE_TIER_TYPES"
+            exit 1
+          fi
+
+          echo "FREE_TIER_INSTANCE_TYPE=$FREE_TIER_INSTANCE_TYPE" >> "$GITHUB_ENV"
+          echo "Tipo de instancia Free Tier elegido: $FREE_TIER_INSTANCE_TYPE"
+
       - name: Delete stacks in ROLLBACK_COMPLETE before deploying
         run: |
           set -euo pipefail
@@ -161,6 +188,7 @@ jobs:
               StudentCode="$STUDENT_CODE" \
               SecurityStackName="$SECURITY_STACK" \
               SubnetId="$DEFAULT_EC2_SUBNET_ID" \
+              InstanceType="$FREE_TIER_INSTANCE_TYPE" \
             --no-fail-on-empty-changeset || { show_stack_events; exit 1; }
 
       - name: Deploy ALB-ASG Stack
@@ -183,6 +211,7 @@ jobs:
               SecurityStackName="$SECURITY_STACK" \
               VpcId="$DEFAULT_VPC_ID" \
               SubnetIds="$DEFAULT_SUBNET_IDS" \
+              InstanceType="$FREE_TIER_INSTANCE_TYPE" \
             --no-fail-on-empty-changeset || { show_stack_events; exit 1; }
 
       - name: Deploy Automation Stack
