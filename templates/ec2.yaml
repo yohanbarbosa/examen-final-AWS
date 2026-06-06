@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Stack 2 - EC2 estatica con Apache y Elastic IP. No crea VPC ni Subred; usa la VPC/Subred por defecto."
+
+Parameters:
+  StudentName:
+    Type: String
+    Default: "Andrey-Felipe-Pinto"
+    Description: "Nombre usado para identificar los recursos."
+
+  SecurityStackName:
+    Type: String
+    Default: "SecurityGroups-Andrey-Felipe"
+    Description: "Nombre del stack Security para importar el Security Group de EC2."
+
+  InstanceType:
+    Type: String
+    Default: "t2.micro"
+    AllowedValues:
+      - "t2.micro"
+      - "t3.micro"
+      - "t3.small"
+    Description: "Tipo de instancia para capa gratuita/laboratorio."
+
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+    Description: "AMI Amazon Linux 2023 obtenida automaticamente desde SSM."
+
+Resources:
+  StaticEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId:
+        Ref: LatestAmiId
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroupIds:
+        - Fn::ImportValue:
+            Fn::Sub: "${SecurityStackName}-EC2SecurityGroupId"
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            dnf update -y
+            dnf install -y httpd
+            systemctl enable httpd
+            systemctl start httpd
+            cat > /var/www/html/index.html <<'EOF'
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+              <meta charset="UTF-8">
+              <title>EC2 Estatica - ${StudentName}</title>
+              <style>
+                body { font-family: Arial, sans-serif; margin: 40px; background: #f6f8fa; }
+                .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+                h1 { color: #1f2937; }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>EC2 Estatica funcionando</h1>
+                <p>Estudiante: ${StudentName}</p>
+                <p>Stack: EC2 con Elastic IP desplegado por CloudFormation.</p>
+              </div>
+            </body>
+            </html>
+            EOF
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "EC2-${StudentName}"
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+
+  StaticElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "EIP-EC2-${StudentName}"
+        - Key: Proyecto
+          Value: "Examen-Final-Cloud-Computing"
+
+  StaticElasticIPAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId:
+        Fn::GetAtt:
+          - StaticElasticIP
+          - AllocationId
+      InstanceId:
+        Ref: StaticEC2Instance
+
+Outputs:
+  InstanceId:
+    Description: "ID de la instancia EC2 estatica"
+    Value:
+      Ref: StaticEC2Instance
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-InstanceId"
+
+  ElasticIP:
+    Description: "Elastic IP asociada a la instancia EC2"
+    Value:
+      Ref: StaticElasticIP
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-ElasticIP"
+
+  WebsiteURL:
+    Description: "URL publica de la pagina web en Apache"
+    Value:
+      Fn::Sub: "http://${StaticElasticIP}"
+
+  EC2StackName:
+    Description: "Nombre del stack EC2"
+    Value:
+      Ref: AWS::StackName

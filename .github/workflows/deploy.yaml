@@ -1,0 +1,125 @@
+name: Deploy CloudFormation Stacks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  STUDENT_NAME: Andrey-Felipe-Pinto
+  SECURITY_STACK: SecurityGroups-Andrey-Felipe
+  EC2_STACK: EC2-Andrey-Felipe
+  ALB_ASG_STACK: ALB-ASG-Andrey-Felipe
+  AUTOMATION_STACK: Automation-Andrey-Felipe
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Detect default VPC and default subnets automatically
+        id: default_network
+        run: |
+          set -e
+
+          DEFAULT_VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=isDefault,Values=true" \
+            --query "Vpcs[0].VpcId" \
+            --output text)
+
+          if [ "$DEFAULT_VPC_ID" = "None" ] || [ "$DEFAULT_VPC_ID" = "null" ] || [ -z "$DEFAULT_VPC_ID" ]; then
+            echo "No existe VPC por defecto en la region $AWS_REGION."
+            exit 1
+          fi
+
+          DEFAULT_SUBNET_IDS=$(aws ec2 describe-subnets \
+            --filters "Name=vpc-id,Values=$DEFAULT_VPC_ID" "Name=default-for-az,Values=true" \
+            --query "Subnets[0:2].SubnetId" \
+            --output text | tr '\t' ',')
+
+          SUBNET_COUNT=$(echo "$DEFAULT_SUBNET_IDS" | tr ',' '\n' | grep -c "subnet-" || true)
+
+          if [ "$SUBNET_COUNT" -lt 2 ]; then
+            echo "El Application Load Balancer requiere minimo 2 subredes por defecto en zonas de disponibilidad diferentes."
+            exit 1
+          fi
+
+          echo "DEFAULT_VPC_ID=$DEFAULT_VPC_ID" >> "$GITHUB_ENV"
+          echo "DEFAULT_SUBNET_IDS=$DEFAULT_SUBNET_IDS" >> "$GITHUB_ENV"
+
+          echo "VPC por defecto detectada: $DEFAULT_VPC_ID"
+          echo "Subredes por defecto detectadas: $DEFAULT_SUBNET_IDS"
+
+      - name: Deploy Security Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file templates/security.yaml \
+            --stack-name "$SECURITY_STACK" \
+            --parameter-overrides StudentName="$STUDENT_NAME" \
+            --no-fail-on-empty-changeset
+
+      - name: Deploy EC2 Static Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file templates/ec2.yaml \
+            --stack-name "$EC2_STACK" \
+            --parameter-overrides \
+              StudentName="$STUDENT_NAME" \
+              SecurityStackName="$SECURITY_STACK" \
+            --no-fail-on-empty-changeset
+
+      - name: Deploy ALB ASG Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file templates/alb-asg.yaml \
+            --stack-name "$ALB_ASG_STACK" \
+            --parameter-overrides \
+              StudentName="$STUDENT_NAME" \
+              SecurityStackName="$SECURITY_STACK" \
+              VpcId="$DEFAULT_VPC_ID" \
+              SubnetIds="$DEFAULT_SUBNET_IDS" \
+            --no-fail-on-empty-changeset
+
+      - name: Deploy Automation Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file templates/automation.yaml \
+            --stack-name "$AUTOMATION_STACK" \
+            --parameter-overrides \
+              StudentName="$STUDENT_NAME" \
+              ALBASGStackName="$ALB_ASG_STACK" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Show relevant outputs
+        run: |
+          echo "EC2 Static Outputs"
+          aws cloudformation describe-stacks \
+            --stack-name "$EC2_STACK" \
+            --query "Stacks[0].Outputs" \
+            --output table
+
+          echo "ALB ASG Outputs"
+          aws cloudformation describe-stacks \
+            --stack-name "$ALB_ASG_STACK" \
+            --query "Stacks[0].Outputs" \
+            --output table
+
+          echo "Automation Outputs"
+          aws cloudformation describe-stacks \
+            --stack-name "$AUTOMATION_STACK" \
+            --query "Stacks[0].Outputs" \
+            --output table
