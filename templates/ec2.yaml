@@ -1,16 +1,25 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Stack 2 - EC2 estatica con Apache y Elastic IP. No crea VPC ni Subred; usa la VPC/Subred por defecto."
+Description: "Static EC2 stack with Amazon Linux 2023, Apache, Elastic IP, and no VPC/Subnet creation."
 
 Parameters:
   StudentName:
     Type: String
     Default: "Andrey-Felipe-Pinto"
-    Description: "Nombre usado para identificar los recursos."
+    Description: "Student name used to tag and name resources."
+
+  StudentCode:
+    Type: String
+    Default: "192177"
+    Description: "Student code used to tag resources."
 
   SecurityStackName:
     Type: String
     Default: "SecurityGroups-Andrey-Felipe"
-    Description: "Nombre del stack Security para importar el Security Group de EC2."
+    Description: "Security stack name used to import the EC2 security group."
+
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: "Default subnet detected automatically by GitHub Actions."
 
   InstanceType:
     Type: String
@@ -19,21 +28,20 @@ Parameters:
       - "t2.micro"
       - "t3.micro"
       - "t3.small"
-    Description: "Tipo de instancia para capa gratuita/laboratorio."
+    Description: "EC2 instance type for the lab."
 
   LatestAmiId:
     Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
     Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-    Description: "AMI Amazon Linux 2023 obtenida automaticamente desde SSM."
+    Description: "Latest Amazon Linux 2023 AMI from SSM Parameter Store."
 
 Resources:
   StaticEC2Instance:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId:
-        Ref: LatestAmiId
-      InstanceType:
-        Ref: InstanceType
+      ImageId: !Ref LatestAmiId
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref SubnetId
       SecurityGroupIds:
         - Fn::ImportValue:
             Fn::Sub: "${SecurityStackName}-EC2SecurityGroupId"
@@ -45,33 +53,40 @@ Resources:
             dnf install -y httpd
             systemctl enable httpd
             systemctl start httpd
+
             cat > /var/www/html/index.html <<'EOF'
             <!DOCTYPE html>
             <html lang="es">
             <head>
               <meta charset="UTF-8">
-              <title>EC2 Estatica - ${StudentName}</title>
+              <title>EC2 estatica - ${StudentName}</title>
               <style>
-                body { font-family: Arial, sans-serif; margin: 40px; background: #f6f8fa; }
-                .card { background: white; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
-                h1 { color: #1f2937; }
+                body { font-family: Arial, sans-serif; margin: 40px; background: #f6f8fa; color: #111827; }
+                main { max-width: 760px; background: #ffffff; padding: 28px; border: 1px solid #d0d7de; border-radius: 8px; }
+                h1 { margin-top: 0; color: #0f172a; }
               </style>
             </head>
             <body>
-              <div class="card">
-                <h1>EC2 Estatica funcionando</h1>
+              <main>
+                <h1>EC2 estatica funcionando</h1>
                 <p>Estudiante: ${StudentName}</p>
-                <p>Stack: EC2 con Elastic IP desplegado por CloudFormation.</p>
-              </div>
+                <p>Codigo: ${StudentCode}</p>
+                <p>Esta pagina fue desplegada con AWS CloudFormation.</p>
+              </main>
             </body>
             </html>
             EOF
       Tags:
         - Key: Name
-          Value:
-            Fn::Sub: "EC2-${StudentName}"
-        - Key: Proyecto
-          Value: "Examen-Final-Cloud-Computing"
+          Value: !Sub "EC2-${StudentName}"
+        - Key: StudentName
+          Value: !Ref StudentName
+        - Key: StudentCode
+          Value: !Ref StudentCode
+        - Key: Project
+          Value: "CloudComputingFinal"
+        - Key: ManagedBy
+          Value: "CloudFormation"
 
   StaticElasticIP:
     Type: AWS::EC2::EIP
@@ -79,44 +94,43 @@ Resources:
       Domain: vpc
       Tags:
         - Key: Name
-          Value:
-            Fn::Sub: "EIP-EC2-${StudentName}"
-        - Key: Proyecto
-          Value: "Examen-Final-Cloud-Computing"
+          Value: !Sub "EIP-EC2-${StudentName}"
+        - Key: StudentName
+          Value: !Ref StudentName
+        - Key: StudentCode
+          Value: !Ref StudentCode
+        - Key: Project
+          Value: "CloudComputingFinal"
+        - Key: ManagedBy
+          Value: "CloudFormation"
 
   StaticElasticIPAssociation:
     Type: AWS::EC2::EIPAssociation
     Properties:
-      AllocationId:
-        Fn::GetAtt:
-          - StaticElasticIP
-          - AllocationId
-      InstanceId:
-        Ref: StaticEC2Instance
+      AllocationId: !GetAtt StaticElasticIP.AllocationId
+      InstanceId: !Ref StaticEC2Instance
 
 Outputs:
   InstanceId:
-    Description: "ID de la instancia EC2 estatica"
-    Value:
-      Ref: StaticEC2Instance
+    Description: "Static EC2 instance ID."
+    Value: !Ref StaticEC2Instance
     Export:
-      Name:
-        Fn::Sub: "${AWS::StackName}-InstanceId"
+      Name: !Sub "${AWS::StackName}-InstanceId"
 
   ElasticIP:
-    Description: "Elastic IP asociada a la instancia EC2"
-    Value:
-      Ref: StaticElasticIP
+    Description: "Elastic IP associated with the static EC2 instance."
+    Value: !Ref StaticElasticIP
     Export:
-      Name:
-        Fn::Sub: "${AWS::StackName}-ElasticIP"
+      Name: !Sub "${AWS::StackName}-ElasticIP"
 
   WebsiteURL:
-    Description: "URL publica de la pagina web en Apache"
-    Value:
-      Fn::Sub: "http://${StaticElasticIP}"
+    Description: "Public website URL served by Apache."
+    Value: !Sub "http://${StaticElasticIP}"
+    Export:
+      Name: !Sub "${AWS::StackName}-WebsiteURL"
 
   EC2StackName:
-    Description: "Nombre del stack EC2"
-    Value:
-      Ref: AWS::StackName
+    Description: "EC2 stack name."
+    Value: !Ref AWS::StackName
+    Export:
+      Name: !Sub "${AWS::StackName}-EC2StackName"

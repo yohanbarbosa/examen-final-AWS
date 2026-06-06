@@ -1,101 +1,92 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: "Stack 1 - Security Groups para EC2 publica y Application Load Balancer. No crea VPC ni Subred; usa la VPC por defecto."
+Description: "Security stack - Security Groups for public EC2 and Application Load Balancer."
 
 Parameters:
   StudentName:
     Type: String
     Default: "Andrey-Felipe-Pinto"
-    Description: "Nombre usado para identificar los recursos."
+    Description: "Student name used to tag and name resources."
+
+  StudentCode:
+    Type: String
+    Default: "192177"
+    Description: "Student code used to tag resources."
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: "Default VPC detected automatically by GitHub Actions."
 
 Resources:
   EC2SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName:
-        Fn::Sub: "SG-EC2-${StudentName}"
-      GroupDescription:
-        Fn::Sub: "Security Group EC2 publica - ${StudentName}"
+      GroupName: !Sub "SG-EC2-${StudentName}"
+      GroupDescription: !Sub "Public EC2 security group - ${StudentName}"
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
-        - Description: "HTTP publico para EC2 estatica"
-          IpProtocol: tcp
+        - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: "0.0.0.0/0"
-        - Description: "SSH temporal para evidencias academicas"
-          IpProtocol: tcp
+          CidrIp: 0.0.0.0/0
+          Description: "HTTP from internet"
+        - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          CidrIp: "0.0.0.0/0"
+          CidrIp: 0.0.0.0/0
+          Description: "SSH for lab access"
       SecurityGroupEgress:
-        - Description: "Salida completa"
-          IpProtocol: "-1"
-          CidrIp: "0.0.0.0/0"
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
       Tags:
         - Key: Name
-          Value:
-            Fn::Sub: "SG-EC2-${StudentName}"
-        - Key: Proyecto
-          Value: "Examen-Final-Cloud-Computing"
+          Value: !Sub "SG-EC2-${StudentName}"
+        - Key: StudentName
+          Value: !Ref StudentName
+        - Key: StudentCode
+          Value: !Ref StudentCode
+        - Key: Project
+          Value: "CloudComputingFinal"
+        - Key: ManagedBy
+          Value: "CloudFormation"
 
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName:
-        Fn::Sub: "SG-ALB-${StudentName}"
-      GroupDescription:
-        Fn::Sub: "Security Group Application Load Balancer - ${StudentName}"
+      GroupName: !Sub "SG-ALB-${StudentName}"
+      GroupDescription: !Sub "Application Load Balancer security group - ${StudentName}"
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
-        - Description: "HTTP publico para ALB"
-          IpProtocol: tcp
+        - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: "0.0.0.0/0"
-        - Description: "HTTPS publico para ALB"
-          IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: "0.0.0.0/0"
+          CidrIp: 0.0.0.0/0
+          Description: "HTTP from internet"
       SecurityGroupEgress:
-        - Description: "Salida completa"
-          IpProtocol: "-1"
-          CidrIp: "0.0.0.0/0"
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: "Allow all outbound traffic"
       Tags:
         - Key: Name
-          Value:
-            Fn::Sub: "SG-ALB-${StudentName}"
-        - Key: Proyecto
-          Value: "Examen-Final-Cloud-Computing"
-
-  EC2FromALBIngress:
-    Type: AWS::EC2::SecurityGroupIngress
-    Properties:
-      GroupId:
-        Ref: EC2SecurityGroup
-      Description: "Permite trafico HTTP desde el ALB hacia las instancias del ASG"
-      IpProtocol: tcp
-      FromPort: 80
-      ToPort: 80
-      SourceSecurityGroupId:
-        Ref: ALBSecurityGroup
+          Value: !Sub "SG-ALB-${StudentName}"
+        - Key: StudentName
+          Value: !Ref StudentName
+        - Key: StudentCode
+          Value: !Ref StudentCode
+        - Key: Project
+          Value: "CloudComputingFinal"
+        - Key: ManagedBy
+          Value: "CloudFormation"
 
 Outputs:
   EC2SecurityGroupId:
-    Description: "ID del Security Group de EC2"
-    Value:
-      Ref: EC2SecurityGroup
+    Description: "EC2 Security Group ID."
+    Value: !Ref EC2SecurityGroup
     Export:
-      Name:
-        Fn::Sub: "${AWS::StackName}-EC2SecurityGroupId"
+      Name: !Sub "${AWS::StackName}-EC2SecurityGroupId"
 
   ALBSecurityGroupId:
-    Description: "ID del Security Group del ALB"
-    Value:
-      Ref: ALBSecurityGroup
+    Description: "ALB Security Group ID."
+    Value: !Ref ALBSecurityGroup
     Export:
-      Name:
-        Fn::Sub: "${AWS::StackName}-ALBSecurityGroupId"
-
-  SecurityStackName:
-    Description: "Nombre del stack de seguridad"
-    Value:
-      Ref: AWS::StackName
+      Name: !Sub "${AWS::StackName}-ALBSecurityGroupId"

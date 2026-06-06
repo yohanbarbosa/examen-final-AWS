@@ -9,6 +9,7 @@ on:
 env:
   AWS_REGION: us-east-1
   STUDENT_NAME: Andrey-Felipe-Pinto
+  STUDENT_CODE: "192177"
   SECURITY_STACK: SecurityGroups-Andrey-Felipe
   EC2_STACK: EC2-Andrey-Felipe
   ALB_ASG_STACK: ALB-ASG-Andrey-Felipe
@@ -18,25 +19,50 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    env:
+      AWS_SESSION_TOKEN_VALUE: ${{ secrets.AWS_SESSION_TOKEN }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials with session token
+        if: ${{ env.AWS_SESSION_TOKEN_VALUE != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ env.AWS_SESSION_TOKEN_VALUE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials without session token
+        if: ${{ env.AWS_SESSION_TOKEN_VALUE == '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Detect default VPC and default subnets automatically
-        id: default_network
+      - name: Validate CloudFormation templates
         run: |
-          set -e
+          set -euo pipefail
+
+          for template in \
+            templates/security.yaml \
+            templates/ec2.yaml \
+            templates/alb-asg.yaml \
+            templates/automation.yaml
+          do
+            echo "Validando $template"
+            aws cloudformation validate-template --template-body "file://$template"
+          done
+
+      - name: Detect default VPC and default subnets automatically
+        run: |
+          set -euo pipefail
 
           DEFAULT_VPC_ID=$(aws ec2 describe-vpcs \
-            --filters "Name=isDefault,Values=true" \
+            --filters "Name=is-default,Values=true" \
             --query "Vpcs[0].VpcId" \
             --output text)
 
@@ -47,79 +73,152 @@ jobs:
 
           DEFAULT_SUBNET_IDS=$(aws ec2 describe-subnets \
             --filters "Name=vpc-id,Values=$DEFAULT_VPC_ID" "Name=default-for-az,Values=true" \
-            --query "Subnets[0:2].SubnetId" \
-            --output text | tr '\t' ',')
+            --query "Subnets[].SubnetId" \
+            --output text | tr '\t' '\n' | sed '/^$/d' | paste -sd, -)
 
-          SUBNET_COUNT=$(echo "$DEFAULT_SUBNET_IDS" | tr ',' '\n' | grep -c "subnet-" || true)
+          SUBNET_COUNT=$(printf "%s" "$DEFAULT_SUBNET_IDS" | tr ',' '\n' | grep -c "^subnet-" || true)
 
           if [ "$SUBNET_COUNT" -lt 2 ]; then
-            echo "El Application Load Balancer requiere minimo 2 subredes por defecto en zonas de disponibilidad diferentes."
+            echo "No existen al menos dos subredes por defecto en la VPC $DEFAULT_VPC_ID."
+            echo "El Application Load Balancer requiere minimo dos subredes en zonas de disponibilidad distintas."
             exit 1
           fi
 
+          DEFAULT_EC2_SUBNET_ID="${DEFAULT_SUBNET_IDS%%,*}"
+
           echo "DEFAULT_VPC_ID=$DEFAULT_VPC_ID" >> "$GITHUB_ENV"
           echo "DEFAULT_SUBNET_IDS=$DEFAULT_SUBNET_IDS" >> "$GITHUB_ENV"
+          echo "DEFAULT_EC2_SUBNET_ID=$DEFAULT_EC2_SUBNET_ID" >> "$GITHUB_ENV"
 
           echo "VPC por defecto detectada: $DEFAULT_VPC_ID"
           echo "Subredes por defecto detectadas: $DEFAULT_SUBNET_IDS"
+          echo "Subred para EC2 estatica: $DEFAULT_EC2_SUBNET_ID"
+
+      - name: Delete stacks in ROLLBACK_COMPLETE before deploying
+        run: |
+          set -euo pipefail
+
+          delete_if_rollback_complete() {
+            local stack_name="$1"
+            local status
+
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$stack_name" \
+              --query "Stacks[0].StackStatus" \
+              --output text 2>/dev/null || echo "DOES_NOT_EXIST")
+
+            echo "$stack_name status: $status"
+
+            if [ "$status" = "ROLLBACK_COMPLETE" ]; then
+              echo "Eliminando stack en ROLLBACK_COMPLETE: $stack_name"
+              aws cloudformation delete-stack --stack-name "$stack_name"
+              aws cloudformation wait stack-delete-complete --stack-name "$stack_name"
+              echo "Stack eliminado: $stack_name"
+            fi
+          }
+
+          delete_if_rollback_complete "$AUTOMATION_STACK"
+          delete_if_rollback_complete "$ALB_ASG_STACK"
+          delete_if_rollback_complete "$EC2_STACK"
+          delete_if_rollback_complete "$SECURITY_STACK"
 
       - name: Deploy Security Stack
         run: |
+          set -euo pipefail
+
+          show_stack_events() {
+            aws cloudformation describe-stack-events \
+              --stack-name "$SECURITY_STACK" \
+              --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='ROLLBACK_IN_PROGRESS' || ResourceStatus=='ROLLBACK_COMPLETE'].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+          }
+
           aws cloudformation deploy \
             --template-file templates/security.yaml \
             --stack-name "$SECURITY_STACK" \
-            --parameter-overrides StudentName="$STUDENT_NAME" \
-            --no-fail-on-empty-changeset
+            --parameter-overrides \
+              StudentName="$STUDENT_NAME" \
+              StudentCode="$STUDENT_CODE" \
+              VpcId="$DEFAULT_VPC_ID" \
+            --no-fail-on-empty-changeset || { show_stack_events; exit 1; }
 
       - name: Deploy EC2 Static Stack
         run: |
+          set -euo pipefail
+
+          show_stack_events() {
+            aws cloudformation describe-stack-events \
+              --stack-name "$EC2_STACK" \
+              --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='ROLLBACK_IN_PROGRESS' || ResourceStatus=='ROLLBACK_COMPLETE'].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+          }
+
           aws cloudformation deploy \
             --template-file templates/ec2.yaml \
             --stack-name "$EC2_STACK" \
             --parameter-overrides \
               StudentName="$STUDENT_NAME" \
+              StudentCode="$STUDENT_CODE" \
               SecurityStackName="$SECURITY_STACK" \
-            --no-fail-on-empty-changeset
+              SubnetId="$DEFAULT_EC2_SUBNET_ID" \
+            --no-fail-on-empty-changeset || { show_stack_events; exit 1; }
 
-      - name: Deploy ALB ASG Stack
+      - name: Deploy ALB-ASG Stack
         run: |
+          set -euo pipefail
+
+          show_stack_events() {
+            aws cloudformation describe-stack-events \
+              --stack-name "$ALB_ASG_STACK" \
+              --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='ROLLBACK_IN_PROGRESS' || ResourceStatus=='ROLLBACK_COMPLETE'].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+          }
+
           aws cloudformation deploy \
             --template-file templates/alb-asg.yaml \
             --stack-name "$ALB_ASG_STACK" \
             --parameter-overrides \
               StudentName="$STUDENT_NAME" \
+              StudentCode="$STUDENT_CODE" \
               SecurityStackName="$SECURITY_STACK" \
               VpcId="$DEFAULT_VPC_ID" \
               SubnetIds="$DEFAULT_SUBNET_IDS" \
-            --no-fail-on-empty-changeset
+            --no-fail-on-empty-changeset || { show_stack_events; exit 1; }
 
       - name: Deploy Automation Stack
         run: |
+          set -euo pipefail
+
+          show_stack_events() {
+            aws cloudformation describe-stack-events \
+              --stack-name "$AUTOMATION_STACK" \
+              --query "StackEvents[?ResourceStatus=='CREATE_FAILED' || ResourceStatus=='UPDATE_FAILED' || ResourceStatus=='ROLLBACK_IN_PROGRESS' || ResourceStatus=='ROLLBACK_COMPLETE'].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]" \
+              --output table || true
+          }
+
           aws cloudformation deploy \
             --template-file templates/automation.yaml \
             --stack-name "$AUTOMATION_STACK" \
             --parameter-overrides \
               StudentName="$STUDENT_NAME" \
+              StudentCode="$STUDENT_CODE" \
               ALBASGStackName="$ALB_ASG_STACK" \
             --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
+            --no-fail-on-empty-changeset || { show_stack_events; exit 1; }
 
-      - name: Show relevant outputs
+      - name: Show final stack outputs
         run: |
-          echo "EC2 Static Outputs"
-          aws cloudformation describe-stacks \
-            --stack-name "$EC2_STACK" \
-            --query "Stacks[0].Outputs" \
-            --output table
+          set -euo pipefail
 
-          echo "ALB ASG Outputs"
-          aws cloudformation describe-stacks \
-            --stack-name "$ALB_ASG_STACK" \
-            --query "Stacks[0].Outputs" \
-            --output table
-
-          echo "Automation Outputs"
-          aws cloudformation describe-stacks \
-            --stack-name "$AUTOMATION_STACK" \
-            --query "Stacks[0].Outputs" \
-            --output table
+          for stack_name in \
+            "$SECURITY_STACK" \
+            "$EC2_STACK" \
+            "$ALB_ASG_STACK" \
+            "$AUTOMATION_STACK"
+          do
+            echo "Outputs de $stack_name"
+            aws cloudformation describe-stacks \
+              --stack-name "$stack_name" \
+              --query "Stacks[0].Outputs" \
+              --output table
+          done
